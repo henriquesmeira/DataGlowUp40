@@ -1,5 +1,5 @@
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import logging
 from datetime import datetime
 import time
@@ -35,6 +35,8 @@ def read_csv_in_chunks(file_path, chunk_size=10000):
         return chunks
     except Exception as e:
         logging.error(f"Erro ao ler o arquivo CSV: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
         exit(1)
 
 # Tratamento de dados
@@ -60,6 +62,11 @@ def process_data(df):
         return df
     except Exception as e:
         logging.error(f"Erro ao tratar os dados: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
+        if hasattr(e, '__traceback__'):
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
         exit(1)
 
 # Criação da conexão com o banco de dados PostgreSQL
@@ -72,32 +79,82 @@ def create_db_connection(database_url):
         return engine
     except Exception as e:
         logging.error(f"Erro ao conectar ao banco de dados: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
         exit(1)
+
+# Função para testar a conexão com o banco (Corrigida para usar text() do SQLAlchemy)
+@log_time
+def test_db_connection(engine):
+    try:
+        logging.info("Testando conexão com o banco...")
+        with engine.connect() as conn:
+            # Usando text() para criar um objeto executável SQL
+            result = conn.execute(text("SELECT 1"))
+            logging.info("Conexão testada com sucesso!")
+        return True
+    except Exception as e:
+        logging.error(f"Erro ao testar conexão: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
+        return False
 
 # Enviando os dados para o banco de dados em chunks
 @log_time
 def send_to_db_in_chunks(chunks, engine):
     try:
         logging.info("Enviando dados para o banco de dados PostgreSQL...")
-        for chunk in chunks:
+        first_chunk = True
+        for i, chunk in enumerate(chunks):
             chunk = process_data(chunk)  # Processando cada chunk
-            chunk.to_sql('voos', con=engine, if_exists='replace', index=False)
-            logging.info(f"Chunk enviado com sucesso. Número de linhas: {len(chunk)}")
+            
+            if first_chunk:
+                # Na primeira iteração, substitui a tabela existente
+                chunk.to_sql('voos', con=engine, if_exists='replace', index=False)
+                first_chunk = False
+                logging.info("Tabela criada e primeiro chunk enviado com sucesso.")
+            else:
+                # Nas iterações seguintes, apenas adiciona à tabela existente
+                chunk.to_sql('voos', con=engine, if_exists='append', index=False)
+                
+            logging.info(f"Chunk {i+1} enviado com sucesso. Número de linhas: {len(chunk)}")
         logging.info("Todos os dados enviados com sucesso.")
     except Exception as e:
         logging.error(f"Erro ao enviar dados para o banco de dados: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
+        # Se possível, imprima algumas linhas do chunk problemático
+        if 'chunk' in locals():
+            try:
+                logging.error(f"Primeiras linhas do chunk problemático: {chunk.head()}")
+                logging.error(f"Tipos de dados do chunk: {chunk.dtypes}")
+            except:
+                logging.error("Não foi possível exibir informações do chunk problemático")
         exit(1)
 
 # Fluxo principal
 if __name__ == "__main__":
-    file_path = 'dados_combinados.csv'
+    try:
+        file_path = 'dados_combinados.csv'
+        logging.info(f"Iniciando processamento do arquivo: {file_path}")
 
-    # Leitura do arquivo CSV em chunks
-    chunks = read_csv_in_chunks(file_path)
+        # Leitura do arquivo CSV em chunks
+        chunks = read_csv_in_chunks(file_path)
 
-    # Conexão com o banco de dados
-    engine = create_db_connection(database_url)
+        # Conexão com o banco de dados
+        engine = create_db_connection(database_url)
+        
+        # Teste a conexão antes de prosseguir
+        if not test_db_connection(engine):
+            logging.error("Não foi possível estabelecer conexão estável com o banco de dados. Encerrando.")
+            exit(1)
 
-    # Envio dos dados para o banco de dados em chunks
-    send_to_db_in_chunks(chunks, engine)
-
+        # Envio dos dados para o banco de dados em chunks
+        send_to_db_in_chunks(chunks, engine)
+        
+        logging.info("Processamento concluído com sucesso!")
+    except Exception as e:
+        logging.error(f"Erro não tratado no fluxo principal: {e}")
+        logging.error(f"Tipo do erro: {type(e).__name__}")
+        logging.error(f"Detalhes do erro: {str(e)}")
+        exit(1)
