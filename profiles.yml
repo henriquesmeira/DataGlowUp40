@@ -1,0 +1,24 @@
+default:
+  outputs:
+    dev:
+      dbname: mydatabase
+      host: postgres
+      pass: mypassword
+      port: 5432
+      schema: public
+      threads: 4
+      type: postgres
+      user: myuser
+  target: dev
+projeto:
+  outputs:
+    dev:
+      dbname: mydatabase
+      host: postgres
+      pass: mypassword
+      port: 5432
+      schema: public
+      threads: 4
+      type: postgres
+      user: myuser
+  target: dev
